@@ -1,0 +1,304 @@
+*Trying to compare Realism to Impressionism*
+
+Or two following art periods: 
+> Realisme: 1840 - 1870
+> Impressionisme:  1870 – 1900
+
+```{r}
+pacman::p_load(jsonlite, tidyverse, lubridate)
+
+Realism_paintings <- fromJSON("https://api.smk.dk/api/v1/art/search/?keys=*&range=[production_dates_start%3A{1840-01-01T00%3A00%3A00.000Z%3B1869-12-31T00%3A00%3A00.000Z}]&filters=[has_image:true],[object_names:maleri],[public_domain:true]&offset=0&rows=2000")
+#Dated between 1840-1870
+#Has an image in the SMK database
+#Type: Painting
+#Public Domain - Free to use
+
+Realism_paintings$items -> Realism_paintings
+
+Impressionism_paintings <- fromJSON("https://api.smk.dk/api/v1/art/search/?keys=*&range=[production_dates_start%3A{1870-01-01T00%3A00%3A00.000Z%3B1899-12-31T00%3A00%3A00.000Z}]&filters=[has_image:true],[object_names:maleri],[public_domain:true]&offset=0&rows=2000")
+#Dated between 1870-1900
+#Has an image in the SMK database
+#Type: Painting
+#Public Domain - Free to use
+
+Impressionism_paintings$items -> Impressionism_paintings
+```
+ 
+#Making the dataframes into SMK_dataframe format - same way as Max (in his github)
+```{r}
+source("SMK_dataframe.R") 
+SMK_dataframe(Realism_paintings) -> Realism_paintings
+
+SMK_dataframe(Impressionism_paintings) -> Impressionism_paintings
+```
+
+
+## Extracting Colors and Comparison
+```{r}
+#loading the packages needed
+pacman::p_load(magick, imager)
+```
+
+```{r}
+#Defining function for processing images from the SMK database
+PicToTible <- function(pic){
+   load.image(pic) %>% #loads picture
+    cimg2magick() %>% #converts the picture into magick format
+    image_resize("500") %>%  #resizes the image into 500 pixels in width
+    image_quantize(max = 10) %>% #color quantinizing - reducing unique colors in an image to 10
+    magick2cimg() %>% #converts image from magick to cimg format
+    as.data.frame(wide = "c") %>% #makes data frame with coordinated images and their corresponsing hex-value
+    rename(R = c.1, G = c.2, B = c.3) %>% #Rename columns for more intuitive names: R, G, B
+    mutate(hex = rgb(R, G, B)) #Represents the hex decimal for the colors
+}
+
+```
+
+
+```{r}
+Realism_thumb_urls <- Realism_paintings %>% 
+  filter(!is.na(saturation)) %>%  
+  pull(image_thumbnail)
+
+Realism_picture_mgk <- NULL
+
+Realism_ouevre <- NULL
+
+for (url in Realism_thumb_urls) {
+  Realism_picture_mgk <- load.image(url) %>% #loads image from url 
+                    cimg2magick() %>% #converts from cimg to magick format
+                    image_resize("500") #resizes to 500
+  
+  Realism_ouevre <- append(Realism_ouevre, Realism_picture_mgk) 
+}
+```
+
+```{r}
+Realism_ouevre
+```
+
+```{r}
+Realism_ouevre <- image_scale(Realism_ouevre, "300x300") #scales all images to 300x300 pixels
+
+image_append(image_scale(Realism_ouevre, "x300")) -> Realism_ouevre #ensures all images are the same height for appending
+```
+
+
+```{r}
+Impressionism_thumb_urls <- Impressionism_paintings %>% 
+  filter(!is.na(saturation)) %>%  
+  pull(image_thumbnail)
+
+Impressionism_picture_mgk <- NULL
+
+Impressionism_ouevre <- NULL
+
+for (url in Impressionism_thumb_urls) {
+  Impressionism_picture_mgk <- load.image(url) %>% 
+                    cimg2magick() %>% 
+                    image_resize("500")
+  
+  Impressionism_ouevre <- append(Impressionism_ouevre, Impressionism_picture_mgk)
+}
+```
+
+```{r}
+Impressionism_ouevre
+```
+
+```{r}
+Impressionism_ouevre <- image_scale(Impressionism_ouevre, "300x300")
+
+image_append(image_scale(Impressionism_ouevre, "x300")) -> Impressionism_ouevre
+```
+
+
+```{r}
+#Creates dataframe from each ouvre with hex codes and frequency
+Realism_ouevre %>% 
+    image_quantize(max = 20) %>% 
+    magick2cimg() %>% 
+    as.data.frame(wide = "c") %>% 
+    rename(R = c.1, G = c.2, B = c.3) %>% 
+    mutate(hex = rgb(R, G, B)) -> Realism_ouevre_colors
+
+Impressionism_ouevre %>% 
+    image_quantize(max = 20) %>% 
+    magick2cimg() %>% 
+    as.data.frame(wide = "c") %>% 
+    rename(R = c.1, G = c.2, B = c.3) %>% 
+    mutate(hex = rgb(R, G, B)) -> Impressionism_ouevre_colors
+
+Realism_ouevre_colors %>% 
+  count(hex, sort = TRUE) -> Realism_ouevre_count
+  
+Impressionism_ouevre_colors %>% 
+  count(hex, sort = TRUE) -> Impressionism_ouevre_count
+```
+
+
+```{r}
+#Plotting the two art periods to visually assess the color differences
+#Realism:
+RealismOuevreColour <-  Realism_ouevre_count %>% 
+  pull(hex)
+names(RealismOuevreColour) <- Realism_ouevre_count %>% 
+  pull(hex)
+
+
+Realism_ouevre_count %>%
+mutate(hex = reorder(hex, n)) %>%
+ggplot(aes(x = hex, y = n, fill = hex)) +
+  geom_col() + 
+  scale_fill_manual(values = RealismOuevreColour) + 
+  coord_flip() +
+  labs(x = "Hex color",
+      y = "Count",
+      title = "Ouevre of Realism") + 
+  theme(axis.text.y = element_text(angle = 14, hjust = 1), legend.position="none") 
+  
+#Impressionism
+ImpressionismOuevreColour <-  Impressionism_ouevre_count %>% 
+  pull(hex)
+names(ImpressionismOuevreColour) <- Impressionism_ouevre_count %>% 
+  pull(hex)
+
+
+Impressionism_ouevre_count %>%
+mutate(hex = reorder(hex, n)) %>%
+ggplot(aes(x = hex, y = n, fill = hex)) +
+  geom_col() + 
+  scale_fill_manual(values = ImpressionismOuevreColour) + 
+  coord_flip() +
+  labs(x = "Hex color",
+      y = "Count",
+      title = "Ouevre of Impressionism") + 
+  theme(axis.text.y = element_text(angle = 14, hjust = 1), legend.position="none")
+```
+
+```{r}
+pacman::p_load(tidytext)
+
+#This code fuck up the colors massively
+
+# # Combine datasets
+# combined_data <- bind_rows(
+#   Realism_ouevre_count %>% mutate(style = "Realism"),
+#   Impressionism_ouevre_count %>% mutate(style = "Impressionism")
+# )
+# 
+# # Reorder colors by count within each style
+# combined_data <- combined_data %>%
+#   mutate(hex = reorder_within(hex, n, style))
+# 
+# # Plot with faceting
+# combined_data %>%
+#   ggplot(aes(x = hex, y = n, fill = hex)) +
+#   geom_col() + 
+#   scale_fill_manual(values = combined_data %>% pull(hex) %>% unique()) +
+#   coord_flip() +
+#   labs(x = "Hex color",
+#        y = "Count",
+#        title = "Comparison of Realism and Impressionism") + 
+#   theme(axis.text.y = element_text(angle = 14, hjust = 1), legend.position="none") +
+#   facet_wrap(~ style, scales = "free") + 
+#   scale_x_reordered()
+
+```
+
+
+```{r}
+#Combines the two images for easier assessment
+# Combine datasets
+combined_data <- bind_rows(
+  Realism_ouevre_count %>% mutate(style = "Realism"),
+  Impressionism_ouevre_count %>% mutate(style = "Impressionism")
+)
+
+# Create a reordered version of `hex` for plotting
+combined_data <- combined_data %>%
+  mutate(hex_reordered = reorder_within(hex, n, style))
+
+# Plot with faceting
+combined_data %>%
+  ggplot(aes(x = hex_reordered, y = n, fill = hex)) +  # Use original `hex` for color mapping
+  geom_col() + 
+  scale_fill_manual(values = setNames(combined_data$hex, combined_data$hex)) +  # Map real hex colors
+  coord_flip() +
+  labs(x = "Hex color",
+       y = "Count",
+       title = "Comparison of Realism and Impressionism") + 
+  theme(axis.text.y = element_text(angle = 14, hjust = 1), legend.position = "none") +
+  facet_wrap(~ style, scales = "free") +
+  scale_x_reordered()  # Ensure x-axis reflects the reordering
+
+```
+
+```{r}
+pacman::p_load(colorspace)
+library(colorspace)
+library(dplyr)
+
+# Function to convert hex to HSB and return numeric components
+extract_hsb <- function(hex_color) {
+  hsb_obj <- hex2RGB(hex_color) %>% as("HSV")
+  return(as.numeric(hsb_obj@coords))  # Extract and return as numeric
+}
+
+# Process Realism
+Realism_hsb <- Realism_ouevre_count %>%
+  rowwise() %>%  # Process each row individually
+  mutate(
+    H = extract_hsb(hex)[1],  # Hue
+    S = extract_hsb(hex)[2],  # Saturation
+    V = extract_hsb(hex)[3]   # Brightness
+  ) %>%
+  ungroup()  # Ungroup after row-wise operation
+
+# Process Impressionism
+Impressionism_hsb <- Impressionism_ouevre_count %>%
+  rowwise() %>%
+  mutate(
+    H = extract_hsb(hex)[1],
+    S = extract_hsb(hex)[2],
+    V = extract_hsb(hex)[3]
+  ) %>%
+  ungroup()
+
+```
+
+
+```{r}
+hsb_data <- bind_rows(
+  Realism_hsb %>% mutate(style = "Realism"),
+  Impressionism_hsb %>% mutate(style = "Impressionism")
+)
+
+```
+
+
+```{r}
+t.test(H ~ style, data = hsb_data)  # Compare hues
+t.test(S ~ style, data = hsb_data)  # Compare saturation
+t.test(V ~ style, data = hsb_data)  # Compare brightness
+
+#Pastels:
+#- Hue: Pure hue to white
+#- Saturation: Low
+#- Brightness: High
+
+#Earth colors:
+#- Hue: Pure hue to grey
+#- Saturation: a bit below medium
+#- Brightness: Medium
+```
+
+```{r}
+wilcox.test(H ~ style, data = hsb_data)
+```
+
+```{r}
+#See the pictures: 
+browseURL(Realism_thumb_urls[20])
+```
+
